@@ -1,0 +1,6 @@
+/data
+src/__pycache__
+/results
+
+src/model_parameters.txt
+src/model_gradients.txt
