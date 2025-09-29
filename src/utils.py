@@ -62,7 +62,7 @@ def train_graph(model, optimizer, loader, criterion, device):
         loss = criterion(out, data.y)
         loss.backward()
         optimizer.step()
-        total_loss += float(loss)  * data.num_graphs
+        total_loss += loss  * data.num_graphs
     return total_loss / len(loader.dataset)
 
 
