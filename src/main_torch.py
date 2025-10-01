@@ -63,7 +63,7 @@ def main(args):
     args.node_qubit = args.graphlet_size
     edge_qubit = args.node_qubit - 1
     n_qubits = args.node_qubit + edge_qubit
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
     q_dev = None  
     w_shapes_dict = {
         'spreadlayer': (0, n_qubits, 1),
