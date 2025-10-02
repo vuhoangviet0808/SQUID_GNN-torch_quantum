@@ -104,11 +104,11 @@ class StarPQC(layers.Layer):
 
         # Dùng Expectation: truyền bằng keyword args để không bị pack type
         exp = self.expect(
-            circuits=circuits,
+            circuits,                                        # <-- inputs bắt buộc (tensor mạch)
             symbol_names=self.data_symbol_names,
             symbol_values=data_vals,
             operators=self.readout
-        )  # shape (B,)
+        )  
 
         # Trả về dạng (B,1) cho khớp với chỗ dùng sau
         return tf.expand_dims(exp, axis=-1)
