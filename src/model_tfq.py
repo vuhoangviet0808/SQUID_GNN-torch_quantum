@@ -32,14 +32,6 @@ def entangle_block(qubits, prefix):
 
 # =================== Star-subgraph PQC (thay qgcn_enhance_layer) ===================
 class StarPQC(layers.Layer):
-    """
-    Tương đương qgcn_enhance_layer + message_passing_pqc:
-      - Encode edges (RY,RZ), nodes (RY,RZ)
-      - CRX/CRY/CRZ được thay bằng controlled rx/ry/rz (neighbor/edge -> ancilla)
-      - Hai khối entangle (tương đương StronglyEntanglingLayers)
-      - Khối update entangle
-      - Đo expval trên qubit center (PauliX)
-    """
     def __init__(self, graphlet_size=4, name=None):
         super().__init__(name=name)
         self.k = graphlet_size
@@ -53,8 +45,6 @@ class StarPQC(layers.Layer):
         self.anc2 = cirq.GridQubit(2, 1)
         self.center_idx = 0
 
-        # ----- symbols -----
-        # data symbols: edges (2*(k-1)), nodes (2*k), inits (4)
         self.data_symbols = []
         for i in range(self.num_edges):
             self.data_symbols += [sp.Symbol(f"edge_{i}_ry"), sp.Symbol(f"edge_{i}_rz")]
@@ -97,14 +87,31 @@ class StarPQC(layers.Layer):
 
         self.readout = [cirq.X(self.node_qs[self.center_idx])]
         self.circuit = c
-        self.pqc = tfq.layers.PQC(self.circuit, self.readout)
+        # self.pqc = tfq.layers.PQC(self.circuit, self.readout)
+        self.expect = tfq.layers.Expectation()
         self.data_symbol_names = [str(s) for s in self.data_symbols]
-
     def call(self, data_vals):
-        circuits_1 = tfq.convert_to_tensor([self.circuit])  # shape (1,), dtype=string
+        """
+        data_vals: [B, len(self.data_symbols)] float32
+        return:    [B, 1] float32 (giống đầu ra PQC)
+        """
+        # chuẩn bị batch mạch
+        circuits_1 = tfq.convert_to_tensor([self.circuit])    # shape (1,), dtype=string
         batch = tf.shape(data_vals)[0]
-        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0)  # shape (B,), dtype=string
-        data_vals = tf.cast(data_vals, tf.float32) 
+        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0)  # (B,)
+
+        data_vals = tf.cast(data_vals, tf.float32)            # (B, n_symbols)
+
+        # Dùng Expectation: truyền bằng keyword args để không bị pack type
+        exp = self.expect(
+            circuits=circuits,
+            symbol_names=self.data_symbol_names,
+            symbol_values=data_vals,
+            operators=self.readout
+        )  # shape (B,)
+
+        # Trả về dạng (B,1) cho khớp với chỗ dùng sau
+        return tf.expand_dims(exp, axis=-1)
 
         return self.pqc((circuits, data_vals))
 class QGNNGraphClassifierTFQ(Model):
