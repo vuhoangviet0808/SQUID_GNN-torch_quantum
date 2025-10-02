@@ -101,11 +101,12 @@ class StarPQC(layers.Layer):
         self.data_symbol_names = [str(s) for s in self.data_symbols]
 
     def call(self, data_vals):
-        circuits_1 = tfq.convert_to_tensor([self.circuit]) 
+        circuits_1 = tfq.convert_to_tensor([self.circuit])  # shape (1,), dtype=string
         batch = tf.shape(data_vals)[0]
-        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0) 
-        data_vals = tf.cast(data_vals, tf.float32)
-        return self.pqc([circuits, data_vals]) 
+        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0)  # shape (B,), dtype=string
+        data_vals = tf.cast(data_vals, tf.float32) 
+
+        return self.pqc((circuits, data_vals))
 class QGNNGraphClassifierTFQ(Model):
     def __init__(self, q_dev=None, w_shapes=None, node_input_dim=1, edge_input_dim=1,
                  graphlet_size=4, hop_neighbor=1, num_classes=2, one_hot=0, hidden_dim=128, dropout=0.3, name=None):
