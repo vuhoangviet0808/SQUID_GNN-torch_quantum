@@ -7,11 +7,9 @@ import numpy as np
 
 from tensorflow.keras import layers, Model
 from tensorflow.keras.layers import Dense, LayerNormalization, Dropout
-from torch_geometric.nn import global_mean_pool  # giữ nguyên pooling API
+from torch_geometric.nn import global_mean_pool  
 from utils import star_subgraph
 
-
-# ======= Gate helpers (thay qml.CRX/CRY/CRZ & StronglyEntanglingLayers) =======
 def controlled_rot(control, target, axis, symbol):
     if axis == 'x': return cirq.ControlledGate(cirq.rx(symbol))(control, target)
     if axis == 'y': return cirq.ControlledGate(cirq.ry(symbol))(control, target)
@@ -30,7 +28,6 @@ def entangle_block(qubits, prefix):
     return ops
 
 
-# =================== Star-subgraph PQC (thay qgcn_enhance_layer) ===================
 class StarPQC(layers.Layer):
     def __init__(self, graphlet_size=4, name=None):
         super().__init__(name=name)

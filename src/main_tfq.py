@@ -27,14 +27,6 @@ grad_file  = os.path.join(result_dir, 'log', f"{timestamp}_model_gradients.txt")
 
 # ============== Helpers: PyG Batch -> TF Tensors ==============
 def torch_batch_to_tf(batch):
-    """
-    batch: PyG Batch với:
-      - x: [N, F]
-      - edge_index: [2, E]
-      - edge_attr: [E, Fe] hoặc None
-      - batch: [N]
-      - y: [B] hoặc [B, C]
-    """
     x = batch.x.cpu().numpy().astype(np.float32) if batch.x is not None else None
     ei = batch.edge_index.cpu().numpy().astype(np.int32)
     ea = batch.edge_attr.cpu().numpy().astype(np.float32) if batch.edge_attr is not None else None
@@ -56,37 +48,27 @@ def torch_batch_to_tf(batch):
 
 
 def make_tf_labels(y, num_classes, criterion):
-    """Chuẩn hoá nhãn theo loss lựa chọn."""
+    c = criterion.lower()
     if num_classes == 1:
-        # regression targets shape [B,1]
-        return tf.reshape(y, [-1, 1])
-
-    # classification
-    if criterion.lower() in ["crossentropy"]:
-        # Sparse CCE cần int32 labels [B]
-        return tf.cast(tf.squeeze(y, axis=-1), tf.int32)
-    elif criterion.lower() in ["bce"]:
-        # BCE (multi-label) -> float [B, 1] (giữ nguyên)
-        return tf.reshape(y, [-1, 1])
+        return tf.reshape(tf.cast(y, tf.float32), [-1, 1])
+    if c == "crossentropy":
+        return tf.reshape(tf.cast(y, tf.int32), [-1])
+    elif c == "bce":
+        return tf.reshape(tf.cast(y, tf.float32), [-1, 1])
     else:
-        # MSE/L1 cho classification (ít dùng) -> float
-        return tf.reshape(y, [-1, 1])
+        return tf.reshape(tf.cast(y, tf.float32), [-1, 1])
 
 
-# ============== Loss factory: khớp --criterion ==============
 def make_loss(criterion, num_classes):
     c = criterion.lower()
     if num_classes == 1:
-        # regression
         if c == "mse":
             return tf.keras.losses.MeanSquaredError()
         elif c == "l1":
             return tf.keras.losses.MeanAbsoluteError()
         else:
-            # mặc định MSE cho regression
             return tf.keras.losses.MeanSquaredError()
     else:
-        # classification
         if c == "crossentropy":
             return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         elif c == "bce":
@@ -101,11 +83,6 @@ def make_loss(criterion, num_classes):
 
 # ============== Optimizer + Scheduler ==============
 def make_optimizer_and_schedule(lr, step_size, gamma, steps_per_epoch):
-    """
-    Ánh xạ StepLR(step_size, gamma) ~ ExponentialDecay với staircase theo bước (mỗi batch).
-    Mỗi 'step_size' epoch -> decay lr *= gamma
-    => decay_steps = step_size * steps_per_epoch
-    """
     decay_steps = max(1, int(step_size * max(1, steps_per_epoch)))
     schedule = tf.keras.optimizers.schedules.ExponentialDecay(
         initial_learning_rate=lr,
@@ -116,8 +93,6 @@ def make_optimizer_and_schedule(lr, step_size, gamma, steps_per_epoch):
     opt = tf.keras.optimizers.Adam(learning_rate=schedule)
     return opt, schedule
 
-
-# ============== Train/Eval (eager; có L2 nếu w_decay>0) ==============
 def compute_weight_decay(model, w_decay):
     if w_decay <= 0:
         return 0.0
@@ -132,18 +107,20 @@ def train_step(model, optimizer, loss_fn, num_classes, criterion, w_decay, batch
         reg_loss = compute_weight_decay(model, w_decay)
         loss = base_loss + reg_loss
 
-        # accuracy (chỉ meaningful cho classification crossentropy)
         if num_classes == 1:
+            base_loss = loss_fn(y_true, logits)
             acc = 0.0
         else:
             if criterion.lower() == "crossentropy":
-                y_int = tf.cast(tf.squeeze(y_true, axis=-1), tf.int32)
-                preds = tf.argmax(logits, axis=-1, output_type=tf.int32)
-                acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_int), tf.float32))
+                base_loss = loss_fn(y_true, logits)
+                preds = tf.argmax(logits, axis=-1, output_type=tf.int32)  # [B]
+                acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_true), tf.float32))
             elif criterion.lower() == "bce":
+                base_loss = loss_fn(y_true, logits)
                 preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
                 acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_true), tf.float32))
             else:
+                base_loss = loss_fn(y_true, logits)
                 acc = 0.0
 
     grads = tape.gradient(loss, model.trainable_variables)
@@ -161,10 +138,11 @@ def eval_step(model, loss_fn, num_classes, criterion, w_decay, batch_tf):
         acc = 0.0
     else:
         if criterion.lower() == "crossentropy":
-            y_int = tf.cast(tf.squeeze(y_true, axis=-1), tf.int32)
-            preds = tf.argmax(logits, axis=-1, output_type=tf.int32)
-            acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_int), tf.float32))
+            base_loss = loss_fn(y_true, logits)
+            preds = tf.argmax(logits, axis=-1, output_type=tf.int32) 
+            acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_true), tf.float32))
         elif criterion.lower() == "bce":
+            base_loss = loss_fn(y_true, logits)
             preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
             acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_true), tf.float32))
         else:
@@ -196,7 +174,6 @@ def run_epoch(model, optimizer, loss_fn, num_classes, criterion, w_decay, loader
     return mean_loss, mean_acc, grads_snap
 
 
-# ================= CLI =================
 def get_args():
     parser = argparse.ArgumentParser(description="Train QGNN on graph data (TFQ)")
     parser.add_argument('--dataset', type=str, default='MUTAG', help='Dataset name (e.g., MUTAG, ENZYMES, CORA)')
