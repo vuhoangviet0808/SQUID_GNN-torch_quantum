@@ -101,21 +101,12 @@ class StarPQC(layers.Layer):
         self.data_symbol_names = [str(s) for s in self.data_symbols]
 
     def call(self, data_vals):
-        # data_vals: [B, len(data_symbols)]
+        circuits_1 = tfq.convert_to_tensor([self.circuit]) 
         batch = tf.shape(data_vals)[0]
-        circuits = tfq.convert_to_tensor([self.circuit] * batch)
-        return self.pqc([circuits, data_vals])  # [B, 1]
-
-
-# ============================= Model TFQ (thay QGNNGraphClassifier) =============================
+        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0) 
+        data_vals = tf.cast(data_vals, tf.float32)
+        return self.pqc([circuits, data_vals]) 
 class QGNNGraphClassifierTFQ(Model):
-    """
-    Giữ nguyên kiến trúc ở mức logic:
-      - input_edge: MLP -> 2 (RY,RZ)
-      - input_node: MLP -> 2 (RY,RZ)
-      - hop_neighbor lần: PQC(message)-> expval (1) ; update MLP([node(2), expval(1)]) -> 2 ; residual
-      - global_mean_pool ; head -> num_classes
-    """
     def __init__(self, q_dev=None, w_shapes=None, node_input_dim=1, edge_input_dim=1,
                  graphlet_size=4, hop_neighbor=1, num_classes=2, one_hot=0, hidden_dim=128, dropout=0.3, name=None):
         super().__init__(name=name)
