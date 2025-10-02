@@ -197,7 +197,7 @@ class QGNNGraphClassifierTFQ(Model):
         ])
         self.star_pqc_layers = [StarSubgraphPQC(graphlet_size=graphlet_size, name=f"star_pqc_{i+1}")
                                 for i in range(hop_neighbor)]
-        self.updates = [
+        self.updates_ = [
             tf.keras.Sequential([
                 Dense(hidden_dim, activation='leaky_relu'),
                 Dropout(dropout),
@@ -237,7 +237,7 @@ class QGNNGraphClassifierTFQ(Model):
         idx_dict = {(int(min(u, v)), int(max(u, v))): i for i, (u, v) in enumerate(ei)}
         for hop in range(self.hop_neighbor):
             pqc_layer = self.star_pqc_layers[hop]
-            upd_layer = self.updates[hop]
+            upd_layer = self.updates_[hop]
             norm_layer = self.norms[hop]
 
             centers = []
