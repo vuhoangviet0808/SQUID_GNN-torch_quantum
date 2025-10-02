@@ -9,7 +9,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 # TFQ model (đảm bảo file qgnn_tfq.py có lớp QGNNGraphClassifierTFQ)
-from qgnn_tfq import QGNNGraphClassifierTFQ
+from model_tfq import QGNNGraphClassifierTFQ
 
 # PyG dataset helpers của bạn
 from data import load_dataset, eval_dataset, random_split
