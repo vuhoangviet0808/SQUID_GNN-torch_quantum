@@ -87,33 +87,40 @@ class StarPQC(layers.Layer):
 
         self.readout = [cirq.X(self.node_qs[self.center_idx])]
         self.circuit = c
+        weight_syms = []
+        for prefix, n_q in [("A", 3), ("B", 3), ("U", 3)]:
+            for i in range(n_q):
+                for ax in ("rx", "ry", "rz"):
+                    weight_syms.append(f"{prefix}_{ax}_{i}")
+
+        self.weight_symbol_names = weight_syms 
         # self.pqc = tfq.layers.PQC(self.circuit, self.readout)
+        
+
+        self.theta = self.add_weight(
+            name="theta_pqc",
+            shape=(len(self.weight_symbol_names),),
+            initializer=tf.keras.initializers.RandomUniform(minval=-0.1, maxval=0.1),
+            trainable=True,
+        )
         self.expect = tfq.layers.Expectation()
-        self.data_symbol_names = [str(s) for s in self.data_symbols]
+        self.data_symbol_names = [str(s) for s in self.data_symbols] 
     def call(self, data_vals):
-        """
-        data_vals: [B, len(self.data_symbols)] float32
-        return:    [B, 1] float32 (giống đầu ra PQC)
-        """
-        # chuẩn bị batch mạch
-        circuits_1 = tfq.convert_to_tensor([self.circuit])    # shape (1,), dtype=string
+        circuits_1 = tfq.convert_to_tensor([self.circuit])  
         batch = tf.shape(data_vals)[0]
-        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0)  # (B,)
-
-        data_vals = tf.cast(data_vals, tf.float32)            # (B, n_symbols)
-
-        # Dùng Expectation: truyền bằng keyword args để không bị pack type
+        circuits = tf.repeat(circuits_1, repeats=tf.cast(batch, tf.int32), axis=0) 
+        symbol_names = tf.constant(self.data_symbol_names + self.weight_symbol_names, dtype=tf.string)
+        data_vals = tf.cast(data_vals, tf.float32)  
+        weight_vals = tf.tile(self.theta[tf.newaxis, :], [batch, 1])  
+        symbol_values = tf.concat([data_vals, weight_vals], axis=1)  
         exp = self.expect(
-            circuits,                                        # <-- inputs bắt buộc (tensor mạch)
-            symbol_names=self.data_symbol_names,
-            symbol_values=data_vals,
-            operators=self.readout
-        )  
+            circuits,
+            symbol_names=symbol_names,
+            symbol_values=symbol_values,
+            operators=self.readout,  
+        ) 
 
-        # Trả về dạng (B,1) cho khớp với chỗ dùng sau
         return tf.expand_dims(exp, axis=-1)
-
-        return self.pqc((circuits, data_vals))
 class QGNNGraphClassifierTFQ(Model):
     def __init__(self, q_dev=None, w_shapes=None, node_input_dim=1, edge_input_dim=1,
                  graphlet_size=4, hop_neighbor=1, num_classes=2, one_hot=0, hidden_dim=128, dropout=0.3, name=None):
