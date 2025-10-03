@@ -7,10 +7,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-# TFQ model (bạn phải có lớp này trong qgnn_tfq.py)
 from model_tfq import QGNNGraphClassifierTFQ
-
-# PyG data helpers của bạn
 from data import load_dataset, eval_dataset, random_split
 
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -24,8 +21,6 @@ os.makedirs(os.path.join(result_dir, 'model'), exist_ok=True)
 param_file = os.path.join(result_dir, 'log', f"{timestamp}_model_parameters.txt")
 grad_file  = os.path.join(result_dir, 'log', f"{timestamp}_model_gradients.txt")
 
-
-# ============== Helpers: PyG Batch -> TF Tensors ==============
 def torch_batch_to_tf(batch):
     x = batch.x.cpu().numpy().astype(np.float32) if batch.x is not None else None
     ei = batch.edge_index.cpu().numpy().astype(np.int32)
@@ -80,8 +75,6 @@ def make_loss(criterion, num_classes):
         else:
             raise ValueError(f"Unsupported loss function: {criterion}")
 
-
-# ============== Optimizer + Scheduler ==============
 def make_optimizer_and_schedule(lr, step_size, gamma, steps_per_epoch):
     decay_steps = max(1, int(step_size * max(1, steps_per_epoch)))
     schedule = tf.keras.optimizers.schedules.ExponentialDecay(
@@ -161,7 +154,7 @@ def run_epoch(model, optimizer, loss_fn, num_classes, criterion, w_decay, loader
         if is_train:
             loss, acc, grads = train_step(model, optimizer, loss_fn, num_classes, criterion, w_decay, batch_tf)
             if log_grad:
-                grads_snap = grads  # giữ lại grads của batch cuối cùng epoch
+                grads_snap = grads
         else:
             loss, acc = eval_step(model, loss_fn, num_classes, criterion, w_decay, batch_tf)
 
@@ -186,14 +179,13 @@ def get_args():
     parser.add_argument('--w_decay', type=float, default=0.0)
     parser.add_argument('--step_size', type=int, default=5)
     parser.add_argument('--gamma', type=float, default=0.8)
-    parser.add_argument('--node_qubit', type=int, default=3)  # ánh xạ với graphlet_size
+    parser.add_argument('--node_qubit', type=int, default=3) 
     parser.add_argument('--num_gnn_layers', type=int, default=2)
-    parser.add_argument('--num_ent_layers', type=int, default=1)  # (tham số này thuộc mạch; xử lý trong qgnn_tfq nếu cần)
+    parser.add_argument('--num_ent_layers', type=int, default=1)  
     parser.add_argument('--hidden_channels', type=int, default=32)
     parser.add_argument('--seed', type=int, default=1712)
     parser.add_argument('--task', type=str, default='graph', choices=['graph', 'node'], help='graph or node classification')
 
-    # Debug options
     parser.add_argument('--plot', action='store_true', help='Enable plotting')
     parser.add_argument('--save_model', action='store_true', help='Enable saving model')
     parser.add_argument('--gradient', action='store_true', help='Enable gradient saving')
@@ -211,12 +203,9 @@ def get_args():
 
 
 def main(args):
-    # mapping cho TFQ backbone
-    args.node_qubit = args.graphlet_size  # giữ hành vi cũ
+    args.node_qubit = args.graphlet_size  
     tf.random.set_seed(args.seed)
     np.random.seed(args.seed)
-
-    # ===== Load dataset =====
     dataset, train_loader, test_loader, task_type = load_dataset(
         name=args.dataset,
         path='../data',
@@ -225,7 +214,6 @@ def main(args):
         batch_size=args.batch_size
     )
 
-    # Model metadata
     node_input_dim = dataset[0].x.shape[1] if dataset[0].x is not None else 1
     edge_input_dim = 0
     if dataset[0].edge_attr is not None:
@@ -238,7 +226,6 @@ def main(args):
     else:
         num_classes = dataset.num_classes
 
-    # ===== Model init =====
     if args.task != 'graph':
         raise NotImplementedError("Node classification cho TFQ chưa được port trong file này.")
 
@@ -258,20 +245,13 @@ def main(args):
     else:
         raise NotImplementedError(f"Model '{args.model}' thuộc baseline PyTorch; chưa port TF ở đây.")
 
-    # ===== Optimizer, loss, scheduler =====
     loss_fn = make_loss(args.criterion, num_classes)
-
-    # số batch/epoch để thiết lập scheduler
     steps_per_epoch = max(1, len(train_loader))
     optimizer, schedule = make_optimizer_and_schedule(args.lr, args.step_size, args.gamma, steps_per_epoch)
-
-    # ===== Logs =====
     print(f"{timestamp}\n")
     print(f"Training model {args.model} on {args.dataset} with graphlet_size={args.graphlet_size}, "
           f"epochs={args.epochs}, lr={args.lr}, step_size={args.step_size}, gamma={args.gamma}, "
           f"criterion={args.criterion}")
-
-    # EarlyStopping theo test_loss (val_loss)
     best_loss = float('inf')
     patience = 10
     wait = 0
@@ -281,7 +261,6 @@ def main(args):
     start = time.time()
     step_plot = args.epochs // 10 if args.epochs > 10 else 1
 
-    # ===== Train loop =====
     for epoch in range(1, args.epochs + 1):
         tr_loss, tr_acc, grads = run_epoch(
             model, optimizer, loss_fn, num_classes, args.criterion, args.w_decay, train_loader,
@@ -304,7 +283,6 @@ def main(args):
                 print(f"Epoch {epoch:02d} | Train Loss: {tr_loss:.4f}, Acc: {tr_acc:.4f} | "
                       f"Test Loss: {te_loss:.4f}, Acc: {te_acc:.4f}")
 
-        # save best (giống EarlyStopping)
         if args.save_model and te_loss < best_loss:
             best_loss = te_loss
             wait = 0
@@ -315,7 +293,6 @@ def main(args):
                 print(f"EarlyStopping triggered at epoch {epoch}. Best val loss: {best_loss:.4f}")
                 break
 
-        # === Ghi tham số & gradient (nếu bật) ===
         if args.gradient:
             with open(param_file, "a") as f_param:
                 f_param.write("=" * 40 + f" Epoch {epoch} " + "=" * 40 + "\n")
@@ -333,7 +310,6 @@ def main(args):
     end = time.time()
     print(f"Total execution time: {end - start:.6f} seconds")
 
-    # ===== Plot =====
     if args.plot:
         epochs_range = range(1, len(train_losses) + 1)
         plt.figure(figsize=(10, 5))
@@ -359,7 +335,6 @@ def main(args):
         plot_path = f"plot_{timestamp}_{args.model}_{args.graphlet_size}_{args.dataset.lower()}_{args.epochs}epochs_lr{args.lr}_{args.gamma}over{args.step_size}.png"
         plt.savefig(os.path.join('../results/fig', plot_path), dpi=300)
 
-    # ===== Results eval (multi-seed) =====
     if args.results:
         accuracies = []
         num_runs = 100
@@ -372,7 +347,6 @@ def main(args):
                 model, optimizer, loss_fn, num_classes, args.criterion, args.w_decay,
                 eval_loader, is_train=False, log_grad=False
             )
-            # lựa chọn metric: dùng acc nếu có classification, nếu regression thì lấy -loss để so sánh
             if num_classes == 1:
                 accuracies.append(-ev_loss)
             else:
@@ -388,7 +362,6 @@ def main(args):
 
 if __name__ == "__main__":
     args = get_args()
-    # header 1 lần nếu cần ghi gradient
     if args.gradient:
         header = "="*10 + f"{timestamp}_{args.model}_{args.graphlet_size}_{args.dataset.lower()}_{args.epochs}epochs_lr{args.lr}_{args.gamma}over{args.step_size}" + "="*10
         with open(param_file, "w") as f_param:
